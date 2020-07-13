@@ -17,7 +17,7 @@ import org.acc.http.proxy.handler.HttpHandler;
  */
 @Log4j2
 public final class Server {
-    public void startUp(int port){
+    public void startUp(int port) {
         EventLoopGroup bossGroup = new NioEventLoopGroup();
         EventLoopGroup workerGroup = new NioEventLoopGroup();
 
@@ -34,13 +34,14 @@ public final class Server {
                             channelPipeline.addLast(HandlerName.HTTP_HANDLER, new HttpHandler());
                         }
                     });
-
             ChannelFuture channelFuture = serverBootstrap.bind(port).sync();
+
+            log.info("代理服务启动成功，运行于 {} 端口", port);
+
             channelFuture.channel().closeFuture().sync();
-        }catch (InterruptedException e) {
+        } catch (InterruptedException e) {
             log.error(e);
-        }
-        finally {
+        } finally {
             workerGroup.shutdownGracefully();
             bossGroup.shutdownGracefully();
         }
