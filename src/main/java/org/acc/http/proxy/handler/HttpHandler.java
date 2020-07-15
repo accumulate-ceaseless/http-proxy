@@ -101,11 +101,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         try {
             KeyPair keyPair = certificate.generateKeyPair();
 
-            CertificateUtils.generateDefaultRoot(certificate);
-
             X509Certificate rootCertificate = CertificateUtils.readRootCertificate(Paths.get(CertificateName.RootCertificateName));
             PrivateKey rootPrivateKey = CertificateUtils.readPrivateKey(Paths.get(CertificateName.RootCertificatePrivateKeyName));
-
 
             return SslContextBuilder.forServer(keyPair.getPrivate(), certificate.generate(CertificateName.Issuer,
                     rootPrivateKey,
