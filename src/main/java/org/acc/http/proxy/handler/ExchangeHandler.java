@@ -3,7 +3,9 @@ package org.acc.http.proxy.handler;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import lombok.extern.log4j.Log4j2;
 
+@Log4j2
 public class ExchangeHandler extends ChannelInboundHandlerAdapter {
     private Channel exchangeChannel;
 

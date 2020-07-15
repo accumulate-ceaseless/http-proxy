@@ -11,29 +11,20 @@ import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
 import lombok.extern.log4j.Log4j2;
-import org.acc.http.proxy.certificate.Certificate;
-import org.acc.http.proxy.certificate.CertificateName;
-import org.acc.http.proxy.certificate.GenerateCertificateException;
-import org.acc.http.proxy.utils.CertificateUtils;
+import org.acc.http.proxy.certificate.CertificatePool;
+import org.acc.http.proxy.pojo.CertificateInfo;
 
 import javax.net.ssl.SSLException;
-import java.nio.file.Paths;
-import java.security.KeyPair;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
-import java.security.PrivateKey;
-import java.security.cert.X509Certificate;
-import java.util.Collections;
 import java.util.Objects;
 
 @Log4j2
 public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     private ChannelHandlerContext ctx;
     private final Bootstrap bootstrap = new Bootstrap();
-    private Certificate certificate;
+    private final CertificatePool certificatePool;
 
-    public HttpHandler(Certificate certificate) {
-        this.certificate = certificate;
+    public HttpHandler(CertificatePool certificatePool) {
+        this.certificatePool = certificatePool;
     }
 
     @Override
@@ -64,20 +55,24 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
             // https连接
             if (httpRequest.method().equals(HttpMethod.CONNECT)) {
+                SslContext sslContext = sslContext(host, port);
+
                 promise.addListener((FutureListener<Channel>) future -> {
-                    FullHttpResponse response =
-                            new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, new HttpResponseStatus(200, "OK"));
+                    FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, new HttpResponseStatus(200, "OK"));
 
                     ctx.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
                         ChannelPipeline channelPipeline = ctx.pipeline();
 
-                        SslContext sslContext = sslContext(host);
                         if (Objects.nonNull(sslContext)) {
-                            channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
                             channelPipeline.remove(HandlerName.HTTP_HANDLER);
-                            channelPipeline.addLast(new ExchangeHandler(future.getNow()));
+
+                            channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
+                        } else {
+                            ctx.close();
                         }
                     });
+
+                    ctx.pipeline().addFirst(new ExchangeHandler(future.getNow()));
                 });
             } else {
                 Object object = fromHttpRequest(httpRequest);
@@ -97,20 +92,14 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         }
     }
 
-    private SslContext sslContext(String host) {
+    private SslContext sslContext(String host, int port) {
         try {
-            KeyPair keyPair = certificate.generateKeyPair();
+            CertificateInfo certificateInfo = certificatePool.getCertificateInfo(host, port);
 
-            X509Certificate rootCertificate = CertificateUtils.readRootCertificate(Paths.get(CertificateName.RootCertificateName));
-            PrivateKey rootPrivateKey = CertificateUtils.readPrivateKey(Paths.get(CertificateName.RootCertificatePrivateKeyName));
-
-            return SslContextBuilder.forServer(keyPair.getPrivate(), certificate.generate(CertificateName.Issuer,
-                    rootPrivateKey,
-                    rootCertificate.getNotBefore(),
-                    rootCertificate.getNotAfter(),
-                    keyPair.getPublic(),
-                    Collections.singletonList(host))).build();
-        } catch (NoSuchAlgorithmException | NoSuchProviderException | GenerateCertificateException | SSLException e) {
+            if (Objects.nonNull(certificateInfo)) {
+                return SslContextBuilder.forServer(certificateInfo.getKeyPair().getPrivate(), certificateInfo.getX509Certificate()).build();
+            }
+        } catch (SSLException e) {
             log.error(e);
         }
 
@@ -149,8 +138,10 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 .connect()
                 .addListener((ChannelFutureListener) future -> {
                     if (future.isSuccess()) {
+                        log.info("{}:{} 代理请求成功", host, port);
                         promise.setSuccess(future.channel());
                     } else {
+                        log.warn("{}:{} 代理请求失败", host, port);
                         ctx.close();
                         future.cancel(true);
                     }
