@@ -9,12 +9,17 @@ import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
 import lombok.extern.log4j.Log4j2;
-import org.acc.http.proxy.HandlerName;
+import org.acc.http.proxy.certificate.Certificate;
 
 @Log4j2
 public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     private ChannelHandlerContext ctx;
     private final Bootstrap bootstrap = new Bootstrap();
+    private Certificate certificate;
+
+    public HttpHandler(Certificate certificate) {
+        this.certificate = certificate;
+    }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {

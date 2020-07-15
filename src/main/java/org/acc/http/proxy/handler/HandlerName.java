@@ -1,4 +1,4 @@
-package org.acc.http.proxy;
+package org.acc.http.proxy.handler;
 
 public final class HandlerName {
     // new HttpServerCodec()

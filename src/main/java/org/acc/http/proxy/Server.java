@@ -10,6 +10,8 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpServerCodec;
 import lombok.extern.log4j.Log4j2;
+import org.acc.http.proxy.certificate.CertificateImpl;
+import org.acc.http.proxy.handler.HandlerName;
 import org.acc.http.proxy.handler.HttpHandler;
 
 /**
@@ -31,7 +33,7 @@ public final class Server {
                             ChannelPipeline channelPipeline = socketChannel.pipeline();
 
                             channelPipeline.addLast(HandlerName.HTTP_CODEC, new HttpServerCodec());
-                            channelPipeline.addLast(HandlerName.HTTP_HANDLER, new HttpHandler());
+                            channelPipeline.addLast(HandlerName.HTTP_HANDLER, new HttpHandler(new CertificateImpl()));
                         }
                     });
             ChannelFuture channelFuture = serverBootstrap.bind(port).sync();

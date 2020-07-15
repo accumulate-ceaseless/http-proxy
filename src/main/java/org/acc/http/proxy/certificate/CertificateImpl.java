@@ -1,124 +1,107 @@
 package org.acc.http.proxy.certificate;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.extern.log4j.Log4j2;
-import org.bouncycastle.asn1.ASN1InputStream;
-import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
-import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
-import org.bouncycastle.cert.X509CertificateHolder;
-import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.cert.CertIOException;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
 import java.math.BigInteger;
 import java.security.*;
 import java.security.cert.CertificateException;
-import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Date;
-
-import static javax.management.timer.Timer.ONE_DAY;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Log4j2
 public class CertificateImpl implements Certificate {
     private final Provider provider = new BouncyCastleProvider();
+
+    // 用SHA1浏览器可能会提示证书不安全
+    private final String SHA256WithRSAEncryption = "SHA256WithRSAEncryption";
+    private final String RSA = "RSA";
 
     public CertificateImpl() {
         Security.addProvider(provider);
     }
 
     @Override
-    public X509Certificate generate(String host) throws GenerateCertificateException {
+    public KeyPair generateKeyPair() throws NoSuchAlgorithmException, NoSuchProviderException {
+        KeyPairGenerator caKeyPairGen = KeyPairGenerator.getInstance(RSA, provider.getName());
+        caKeyPairGen.initialize(2048, new SecureRandom());
+
+        return caKeyPairGen.genKeyPair();
+    }
+
+    @Override
+    public X509Certificate generateRoot(String subject, Date notBefore, Date notAfter, KeyPair keyPair) throws GenerateCertificateException {
         try {
-            long millis = System.currentTimeMillis();
-            Key key = generateKey();
+            JcaX509v3CertificateBuilder jcaX509v3CertificateBuilder = new JcaX509v3CertificateBuilder(new X500Name(subject),
+                    BigInteger.valueOf(System.currentTimeMillis()),
+                    notBefore,
+                    notAfter,
+                    new X500Name(subject),
+                    keyPair.getPublic());
 
-            X509v3CertificateBuilder x509v3CertificateBuilder = new X509v3CertificateBuilder(
-                    new X500Name("C=CN, ST=GD, L=SZ, O=lee, OU=study, CN=ProxyRoot"),
-                    BigInteger.valueOf(millis),
-                    new Date(millis - 10 * ONE_DAY),
-                    new Date(millis + 3650 * ONE_DAY),
-                    new X500Name("C=CN, ST=GD, L=SZ, O=lee, OU=study, CN=" + host),
-                    SubjectPublicKeyInfo.getInstance(new ASN1InputStream(key.getPublicKey().getEncoded()).readObject())
-            );
+            jcaX509v3CertificateBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(0));
 
-            byte[] signatureBytes = signatureBytes(key);
+            ContentSigner contentSigner = new JcaContentSignerBuilder(SHA256WithRSAEncryption).build(keyPair.getPrivate());
 
-            X509CertificateHolder x509CertificateHolder = x509v3CertificateBuilder.build(new ContentSigner() {
-                private ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            return new JcaX509CertificateConverter().getCertificate(jcaX509v3CertificateBuilder.build(contentSigner));
+        } catch (CertIOException | OperatorCreationException | CertificateException e) {
+            throw new GenerateCertificateException("生成根证书失败", e);
+        }
+    }
 
-                {
-                    byteArrayOutputStream.write(signatureBytes);
-                }
+    @Override
+    public X509Certificate generate(String issuer, PrivateKey privateKey, Date notBefore, Date notAfter, PublicKey publicKey, List<String> hosts) throws GenerateCertificateException {
+        try {
+            String subject = fromIssuer(issuer, hosts.get(0));
 
-                @Override
-                public AlgorithmIdentifier getAlgorithmIdentifier() {
-                    return new AlgorithmIdentifier(PKCSObjectIdentifiers.sha1WithRSAEncryption);
-                }
+            JcaX509v3CertificateBuilder jcaX509v3CertificateBuilder = new JcaX509v3CertificateBuilder(new X500Name(issuer),
+                    BigInteger.valueOf(System.currentTimeMillis()),
+                    notBefore,
+                    notAfter,
+                    new X500Name(subject),
+                    publicKey);
 
-                @Override
-                public OutputStream getOutputStream() {
-                    return byteArrayOutputStream;
-                }
+            List<GeneralName> generalNames = hosts.stream()
+                    .map(host -> new GeneralName(GeneralName.dNSName, host))
+                    .collect(Collectors.toList());
 
-                @Override
-                public byte[] getSignature() {
-                    return signatureBytes;
-                }
-            });
+            GeneralName[] generalNameArray = new GeneralName[generalNames.size()];
 
-            return (X509Certificate) CertificateFactory
-                    .getInstance("X509")
-                    .generateCertificate(new ByteArrayInputStream(x509CertificateHolder.getEncoded()));
-        } catch (SignatureException | InvalidKeyException | NoSuchAlgorithmException | NoSuchProviderException | CertificateException | IOException e) {
+            jcaX509v3CertificateBuilder.addExtension(Extension.subjectAlternativeName, false, new GeneralNames(generalNames.toArray(generalNameArray)));
+
+            ContentSigner contentSigner = new JcaContentSignerBuilder(SHA256WithRSAEncryption).build(privateKey);
+
+            return new JcaX509CertificateConverter().getCertificate(jcaX509v3CertificateBuilder.build(contentSigner));
+        } catch (CertIOException | CertificateException | OperatorCreationException e) {
             throw new GenerateCertificateException("生成证书失败", e);
         }
     }
 
-    /**
-     * 签名数据
-     *
-     * @param key
-     * @return
-     * @throws NoSuchAlgorithmException
-     * @throws InvalidKeyException
-     * @throws SignatureException
-     */
-    private byte[] signatureBytes(Key key) throws NoSuchAlgorithmException, InvalidKeyException, SignatureException {
-        Signature signature = Signature.getInstance("SHA1withRSA");
-        signature.initSign(key.getPrivateKey());
-        signature.update(key.publicKey.getEncoded());
+    private String fromIssuer(String issuer, String host) {
+        String cn = "CN";
 
-        return signature.sign();
-    }
-
-    /**
-     * 生成密钥
-     *
-     * @return
-     * @throws NoSuchAlgorithmException
-     * @throws NoSuchProviderException
-     */
-    private Key generateKey() throws NoSuchAlgorithmException, NoSuchProviderException {
-        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA", provider.getName());
-        keyPairGenerator.initialize(2048, new SecureRandom());
-
-        KeyPair keyPair = keyPairGenerator.generateKeyPair();
-
-        return new Key(keyPair.getPrivate(), keyPair.getPublic());
-    }
-
-    @Data
-    @AllArgsConstructor
-    private static class Key {
-        private PrivateKey privateKey;
-        private PublicKey publicKey;
+        return Stream.of(issuer.split(","))
+                .map(String::trim)
+                .map(s -> {
+                    String[] strings = s.split("=");
+                    if (cn.equals(strings[0])) {
+                        return cn + "=" + host;
+                    }
+                    return s;
+                }).collect(Collectors.joining(", "));
     }
 }
