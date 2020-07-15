@@ -64,7 +64,7 @@ public class CertificateImpl implements Certificate {
     }
 
     @Override
-    public X509Certificate generate(String issuer, PrivateKey privateKey, Date notBefore, Date notAfter, PublicKey publicKey, List<String> hosts) throws GenerateCertificateException {
+    public X509Certificate generate(String issuer, PrivateKey rootPrivateKey, Date notBefore, Date notAfter, PublicKey publicKey, List<String> hosts) throws GenerateCertificateException {
         try {
             String subject = fromIssuer(issuer, hosts.get(0));
 
@@ -83,7 +83,7 @@ public class CertificateImpl implements Certificate {
 
             jcaX509v3CertificateBuilder.addExtension(Extension.subjectAlternativeName, false, new GeneralNames(generalNames.toArray(generalNameArray)));
 
-            ContentSigner contentSigner = new JcaContentSignerBuilder(SHA256WithRSAEncryption).build(privateKey);
+            ContentSigner contentSigner = new JcaContentSignerBuilder(SHA256WithRSAEncryption).build(rootPrivateKey);
 
             return new JcaX509CertificateConverter().getCertificate(jcaX509v3CertificateBuilder.build(contentSigner));
         } catch (CertIOException | CertificateException | OperatorCreationException e) {

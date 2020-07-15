@@ -5,11 +5,26 @@ import io.netty.channel.*;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
 import lombok.extern.log4j.Log4j2;
 import org.acc.http.proxy.certificate.Certificate;
+import org.acc.http.proxy.certificate.CertificateName;
+import org.acc.http.proxy.certificate.GenerateCertificateException;
+import org.acc.http.proxy.utils.CertificateUtils;
+
+import javax.net.ssl.SSLException;
+import java.nio.file.Paths;
+import java.security.KeyPair;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.PrivateKey;
+import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.Objects;
 
 @Log4j2
 public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
@@ -56,13 +71,13 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                     ctx.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
                         ChannelPipeline channelPipeline = ctx.pipeline();
 
-                        channelPipeline.remove(HandlerName.HTTP_CODEC);
-                        channelPipeline.remove(HandlerName.HTTP_HANDLER);
+                        SslContext sslContext = sslContext(host);
+                        if (Objects.nonNull(sslContext)) {
+                            channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
+                            channelPipeline.remove(HandlerName.HTTP_HANDLER);
+                            channelPipeline.addLast(new ExchangeHandler(future.getNow()));
+                        }
                     });
-
-                    ChannelPipeline channelPipeline = ctx.pipeline();
-
-                    channelPipeline.addLast(new ExchangeHandler(future.getNow()));
                 });
             } else {
                 Object object = fromHttpRequest(httpRequest);
@@ -80,6 +95,29 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         } else {
             ReferenceCountUtil.release(msg);
         }
+    }
+
+    private SslContext sslContext(String host) {
+        try {
+            KeyPair keyPair = certificate.generateKeyPair();
+
+            CertificateUtils.generateDefaultRoot(certificate);
+
+            X509Certificate rootCertificate = CertificateUtils.readRootCertificate(Paths.get(CertificateName.RootCertificateName));
+            PrivateKey rootPrivateKey = CertificateUtils.readPrivateKey(Paths.get(CertificateName.RootCertificatePrivateKeyName));
+
+
+            return SslContextBuilder.forServer(keyPair.getPrivate(), certificate.generate(CertificateName.Issuer,
+                    rootPrivateKey,
+                    rootCertificate.getNotBefore(),
+                    rootCertificate.getNotAfter(),
+                    keyPair.getPublic(),
+                    Collections.singletonList(host))).build();
+        } catch (NoSuchAlgorithmException | NoSuchProviderException | GenerateCertificateException | SSLException e) {
+            log.error(e);
+        }
+
+        return null;
     }
 
     /**

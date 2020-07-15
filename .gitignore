@@ -1,3 +1,5 @@
 .idea
 http-proxy.iml
 target
+ca.crt
+ca_private.der

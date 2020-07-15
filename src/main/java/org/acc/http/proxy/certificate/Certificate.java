@@ -31,7 +31,7 @@ public interface Certificate {
      * 根据根证书动态签发证书
      *
      * @param issuer
-     * @param privateKey
+     * @param rootPrivateKey
      * @param notBefore
      * @param notAfter
      * @param publicKey
@@ -39,5 +39,5 @@ public interface Certificate {
      * @return
      * @throws GenerateCertificateException
      */
-    X509Certificate generate(String issuer, PrivateKey privateKey, Date notBefore, Date notAfter, PublicKey publicKey, List<String> hosts) throws GenerateCertificateException;
+    X509Certificate generate(String issuer, PrivateKey rootPrivateKey, Date notBefore, Date notAfter, PublicKey publicKey, List<String> hosts) throws GenerateCertificateException;
 }
