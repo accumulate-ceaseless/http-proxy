@@ -14,7 +14,7 @@ import org.acc.http.proxy.HandlerName;
 @Log4j2
 public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     private ChannelHandlerContext ctx;
-    private Bootstrap bootstrap = new Bootstrap();
+    private final Bootstrap bootstrap = new Bootstrap();
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
@@ -77,6 +77,12 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         }
     }
 
+    /**
+     * 将请求转化为原始数据
+     *
+     * @param httpRequest
+     * @return
+     */
     private Object fromHttpRequest(HttpRequest httpRequest) {
         EmbeddedChannel embeddedChannel = new EmbeddedChannel(new HttpRequestEncoder());
         embeddedChannel.writeOutbound(httpRequest);
