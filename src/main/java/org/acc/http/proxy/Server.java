@@ -23,17 +23,19 @@ import java.util.function.Consumer;
  */
 @Log4j2
 public final class Server {
-    public void startUp(int port) {
-        startUpConsume(port, null);
+    public void run(int port) {
+        run(port, null, null);
     }
 
-    public void startUpConsume(int port, Consumer<HttpRequest> consumer) {
+    public void runWithConsumer(int port, Consumer<HttpRequest> consumer) {
+        run(port, consumer, new CertificatePool(new CertificateImpl()));
+    }
+
+    private void run(int port, Consumer<HttpRequest> consumer, CertificatePool certificatePool) {
         EventLoopGroup bossGroup = new NioEventLoopGroup();
         EventLoopGroup workerGroup = new NioEventLoopGroup();
 
         try {
-            CertificatePool certificatePool = new CertificatePool(new CertificateImpl());
-
             ServerBootstrap serverBootstrap = new ServerBootstrap();
             serverBootstrap.group(bossGroup, workerGroup)
                     .channel(NioServerSocketChannel.class)

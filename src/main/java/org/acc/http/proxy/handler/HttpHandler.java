@@ -56,18 +56,42 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
             Promise<Channel> promise = promise(host, port);
 
-            // https连接
-            if (httpRequest.method().equals(HttpMethod.CONNECT)) {
-                httpsHandle(host, port, promise);
-            } else {
+            // http连接
+            if (!httpRequest.method().equals(HttpMethod.CONNECT)) {
                 httpHandle(httpRequest, promise);
+                return;
+            }
+
+            // https连接
+            if (Objects.isNull(consumer)) {
+                httpsHandle(promise);
+            } else {
+                httpsHandle(sslContext(host, port), promise);
             }
         }
         ReferenceCountUtil.release(msg);
     }
 
-    private void httpsHandle(String host, int port, Promise<Channel> promise) {
-        SslContext sslContext = sslContext(host, port);
+    private void httpsHandle(Promise<Channel> promise) {
+        promise.addListener((FutureListener<Channel>) future -> {
+            FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, new HttpResponseStatus(200, "OK"));
+
+            ctx.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
+                ChannelPipeline channelPipeline = ctx.pipeline();
+
+                channelPipeline.remove(HandlerName.HTTP_HANDLER);
+                channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
+
+                channelPipeline.addLast(new ExchangeHandler(future.getNow()));
+            });
+        });
+    }
+
+    private void httpsHandle(SslContext sslContext, Promise<Channel> promise) {
+        if (Objects.isNull(sslContext)) {
+            ctx.close();
+            return;
+        }
 
         promise.addListener((FutureListener<Channel>) future -> {
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, new HttpResponseStatus(200, "OK"));
@@ -75,24 +99,12 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
             ctx.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
                 ChannelPipeline channelPipeline = ctx.pipeline();
 
-                // consumer为空时，不进行内容解密
-                if (Objects.isNull(consumer)) {
-                    channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
-                    channelPipeline.remove(HandlerName.HTTP_HANDLER);
+                channelPipeline.remove(HandlerName.HTTP_HANDLER);
 
-                    channelPipeline.addLast(new ExchangeHandler(future.getNow()));
-                } else {
-                    if (Objects.isNull(sslContext)) {
-                        ctx.close();
-                        return;
-                    }
+                channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
+                // 调用addLast, 前面还有HttpServerCodec
+                channelPipeline.addLast(new ExchangeHandler(future.getNow(), consumer));
 
-                    channelPipeline.remove(HandlerName.HTTP_HANDLER);
-
-                    channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
-                    // 调用addLast, 前面还有HttpServerCodec
-                    channelPipeline.addLast(new ExchangeHandler(future.getNow(), consumer));
-                }
             });
         });
     }
@@ -112,8 +124,10 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     }
 
     private void httpHandle(HttpRequest httpRequest, Promise<Channel> promise) {
-        // 如果是http请求，无需解密，直接获取
-        consumer.accept(httpRequest);
+        if (Objects.nonNull(consumer)) {
+            // 如果是http请求，无需解密，直接获取
+            consumer.accept(httpRequest);
+        }
 
         Object object = fromHttpRequest(httpRequest);
 

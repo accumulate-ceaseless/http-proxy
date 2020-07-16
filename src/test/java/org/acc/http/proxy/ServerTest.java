@@ -11,12 +11,12 @@ public class ServerTest {
 
     @Test
     public void startUpTest() {
-        server.startUp(8001);
+        server.run(8001);
     }
 
     @Test
     public void startUpConsume() {
-        server.startUpConsume(8001, httpRequest -> {
+        server.runWithConsumer(8001, httpRequest -> {
             log.info("{}", httpRequest);
             log.info("主机{}， 请求地址 {}", httpRequest.headers().get(HttpHeaderNames.HOST), httpRequest.uri());
         });
