@@ -10,12 +10,12 @@ public class ServerTest {
     private Server server = new Server();
 
     @Test
-    public void startUpTest() {
+    public void runTest() {
         server.run(8001);
     }
 
     @Test
-    public void startUpConsume() {
+    public void runWithConsumerTest() {
         server.runWithConsumer(8001, httpRequest -> {
             log.info("{}", httpRequest);
             log.info("主机{}， 请求地址 {}", httpRequest.headers().get(HttpHeaderNames.HOST), httpRequest.uri());

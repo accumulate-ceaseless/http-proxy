@@ -2,7 +2,6 @@ package org.acc.http.proxy.handler;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
-import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.ssl.SslContext;
@@ -13,6 +12,7 @@ import io.netty.util.concurrent.Promise;
 import lombok.extern.log4j.Log4j2;
 import org.acc.http.proxy.certificate.CertificatePool;
 import org.acc.http.proxy.pojo.CertificateInfo;
+import org.acc.http.proxy.utils.MsgUtils;
 
 import javax.net.ssl.SSLException;
 import java.util.Objects;
@@ -129,7 +129,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
             consumer.accept(httpRequest);
         }
 
-        Object object = fromHttpRequest(httpRequest);
+        Object object = MsgUtils.fromHttpRequest(httpRequest);
 
         promise.addListener((FutureListener<Channel>) future -> {
             ChannelPipeline channelPipeline = ctx.pipeline();
@@ -140,21 +140,6 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
             channelPipeline.addLast(new ExchangeHandler(future.getNow()));
             future.get().writeAndFlush(object);
         });
-    }
-
-    /**
-     * 将请求转化为原始数据
-     *
-     * @param httpRequest
-     * @return
-     */
-    private Object fromHttpRequest(HttpRequest httpRequest) {
-        EmbeddedChannel embeddedChannel = new EmbeddedChannel(new HttpRequestEncoder());
-        embeddedChannel.writeOutbound(httpRequest);
-        Object object = embeddedChannel.readOutbound();
-        embeddedChannel.close();
-
-        return object;
     }
 
     /**
