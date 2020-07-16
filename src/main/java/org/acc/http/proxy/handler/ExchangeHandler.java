@@ -3,8 +3,10 @@ package org.acc.http.proxy.handler;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpRequest;
 import lombok.extern.log4j.Log4j2;
+import org.acc.http.proxy.utils.MsgUtils;
 
 import java.util.function.Consumer;
 
@@ -38,10 +40,16 @@ public class ExchangeHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof HttpRequest) {
             HttpRequest httpRequest = (HttpRequest) msg;
-            consumer.accept(httpRequest);
-        }
 
-        targetChannel.write(msg);
+            consumer.accept(httpRequest);
+            targetChannel.write(MsgUtils.fromHttpRequest(httpRequest));
+        } else if (msg instanceof HttpContent) {
+            HttpContent httpContent = (HttpContent) msg;
+
+            targetChannel.write(httpContent.content());
+        } else {
+            targetChannel.write(msg);
+        }
     }
 
     @Override
