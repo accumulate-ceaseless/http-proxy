@@ -42,7 +42,7 @@ public final class Server {
                         protected void initChannel(SocketChannel socketChannel) throws Exception {
                             ChannelPipeline channelPipeline = socketChannel.pipeline();
 
-                            channelPipeline.addLast(HandlerName.HTTP_CODEC, new HttpServerCodec());
+                            channelPipeline.addLast(HandlerName.HTTP_SERVER_CODEC, new HttpServerCodec());
                             channelPipeline.addLast(HandlerName.HTTP_HANDLER, new HttpHandler(certificatePool, consumer));
                         }
                     });

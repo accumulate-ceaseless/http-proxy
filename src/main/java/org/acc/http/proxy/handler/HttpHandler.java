@@ -23,7 +23,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     private ChannelHandlerContext ctx;
     private final Bootstrap bootstrap = new Bootstrap();
     private final CertificatePool certificatePool;
-    private Consumer<HttpRequest> consumer;
+    private final Consumer<HttpRequest> consumer;
 
     public HttpHandler(CertificatePool certificatePool, Consumer<HttpRequest> consumer) {
         this.certificatePool = certificatePool;
@@ -58,41 +58,43 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
             // https连接
             if (httpRequest.method().equals(HttpMethod.CONNECT)) {
-                SslContext sslContext = sslContext(host, port);
-
-                promise.addListener((FutureListener<Channel>) future -> {
-                    FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, new HttpResponseStatus(200, "OK"));
-
-                    ctx.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
-                        ChannelPipeline channelPipeline = ctx.pipeline();
-
-                        if (Objects.nonNull(sslContext)) {
-                            channelPipeline.remove(HandlerName.HTTP_HANDLER);
-
-                            channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
-                            // 调用addLast, 前面还有一个HttpServerCodec
-                            channelPipeline.addLast(new ExchangeHandler(future.getNow(), consumer));
-                        } else {
-                            ctx.close();
-                        }
-                    });
-                });
+                httpsHandle(host, port, promise);
             } else {
-                Object object = fromHttpRequest(httpRequest);
+                httpHandle(httpRequest, promise);
+            }
+        }
+        ReferenceCountUtil.release(msg);
+    }
 
-                promise.addListener((FutureListener<Channel>) future -> {
-                    ChannelPipeline channelPipeline = ctx.pipeline();
+    private void httpsHandle(String host, int port, Promise<Channel> promise) {
+        SslContext sslContext = sslContext(host, port);
 
-                    channelPipeline.remove(HandlerName.HTTP_CODEC);
+        promise.addListener((FutureListener<Channel>) future -> {
+            FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, new HttpResponseStatus(200, "OK"));
+
+            ctx.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
+                ChannelPipeline channelPipeline = ctx.pipeline();
+
+                // consumer为空时，不进行内容解密
+                if (Objects.isNull(consumer)) {
+                    channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
                     channelPipeline.remove(HandlerName.HTTP_HANDLER);
 
                     channelPipeline.addLast(new ExchangeHandler(future.getNow()));
-                    future.get().writeAndFlush(object);
-                });
-            }
-        } else {
-            ReferenceCountUtil.release(msg);
-        }
+                } else {
+                    if (Objects.isNull(sslContext)) {
+                        ctx.close();
+                        return;
+                    }
+
+                    channelPipeline.remove(HandlerName.HTTP_HANDLER);
+
+                    channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
+                    // 调用addLast, 前面还有HttpServerCodec
+                    channelPipeline.addLast(new ExchangeHandler(future.getNow(), consumer));
+                }
+            });
+        });
     }
 
     private SslContext sslContext(String host, int port) {
@@ -107,6 +109,23 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         }
 
         return null;
+    }
+
+    private void httpHandle(HttpRequest httpRequest, Promise<Channel> promise) {
+        // 如果是http请求，无需解密，直接获取
+        consumer.accept(httpRequest);
+
+        Object object = fromHttpRequest(httpRequest);
+
+        promise.addListener((FutureListener<Channel>) future -> {
+            ChannelPipeline channelPipeline = ctx.pipeline();
+
+            channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
+            channelPipeline.remove(HandlerName.HTTP_HANDLER);
+
+            channelPipeline.addLast(new ExchangeHandler(future.getNow()));
+            future.get().writeAndFlush(object);
+        });
     }
 
     /**
