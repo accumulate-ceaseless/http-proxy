@@ -61,7 +61,7 @@ public final class CertificatePool {
             }
 
             certificateInfoMap.put(key, certificateInfo);
-            log.info("证书池新增 {} 的证书", key);
+            log.info("证书池新增 {} 的证书, 当前池中证书数量 {}", key, certificateInfoMap.size());
 
             return certificateInfo;
         } catch (NoSuchAlgorithmException | NoSuchProviderException | GenerateCertificateException e) {

@@ -16,15 +16,18 @@ import org.acc.http.proxy.pojo.CertificateInfo;
 
 import javax.net.ssl.SSLException;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 @Log4j2
 public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     private ChannelHandlerContext ctx;
     private final Bootstrap bootstrap = new Bootstrap();
     private final CertificatePool certificatePool;
+    private Consumer<HttpRequest> consumer;
 
-    public HttpHandler(CertificatePool certificatePool) {
+    public HttpHandler(CertificatePool certificatePool, Consumer<HttpRequest> consumer) {
         this.certificatePool = certificatePool;
+        this.consumer = consumer;
     }
 
     @Override
@@ -67,12 +70,12 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                             channelPipeline.remove(HandlerName.HTTP_HANDLER);
 
                             channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
+                            // 调用addLast, 前面还有一个HttpServerCodec
+                            channelPipeline.addLast(new ExchangeHandler(future.getNow(), consumer));
                         } else {
                             ctx.close();
                         }
                     });
-
-                    ctx.pipeline().addFirst(new ExchangeHandler(future.getNow()));
                 });
             } else {
                 Object object = fromHttpRequest(httpRequest);
@@ -138,7 +141,6 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 .connect()
                 .addListener((ChannelFutureListener) future -> {
                     if (future.isSuccess()) {
-                        log.info("{}:{} 代理请求成功", host, port);
                         promise.setSuccess(future.channel());
                     } else {
                         log.warn("{}:{} 代理请求失败", host, port);
