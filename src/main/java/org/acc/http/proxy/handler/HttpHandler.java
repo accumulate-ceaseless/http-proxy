@@ -160,9 +160,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
         bootstrap.group(ctx.channel().eventLoop())
                 .channel(NioSocketChannel.class)
-                .remoteAddress(host, port)
                 .handler(new TargetHandler(ctx.channel()))
-                .connect()
+                .connect(host, port)
                 .addListener((ChannelFutureListener) future -> {
                     if (future.isSuccess()) {
                         promise.setSuccess(future.channel());
@@ -188,17 +187,16 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
         bootstrap.group(ctx.channel().eventLoop())
                 .channel(NioSocketChannel.class)
-                .remoteAddress(host, port)
                 .handler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline channelPipeline = ch.pipeline();
 
                         channelPipeline.addLast(new SslHandler(clientSslContext.newEngine(ch.alloc())));
-                        channelPipeline.addLast(new TargetHandler(ctx.channel(), host));
+                        channelPipeline.addLast(new TargetHandler(ctx.channel()));
                     }
                 })
-                .connect()
+                .connect(host, port)
                 .addListener((ChannelFutureListener) future -> {
                     if (future.isSuccess()) {
                         promise.setSuccess(future.channel());
