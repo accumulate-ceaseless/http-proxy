@@ -2,10 +2,13 @@ package org.acc.http.proxy.handler;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
+import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslHandler;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
@@ -25,9 +28,15 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     private final CertificatePool certificatePool;
     private final Consumer<HttpRequest> consumer;
 
+    private SslContext clientSslContext;
+
     public HttpHandler(CertificatePool certificatePool, Consumer<HttpRequest> consumer) {
         this.certificatePool = certificatePool;
         this.consumer = consumer;
+
+        if (Objects.nonNull(consumer)) {
+            initClientSslContext();
+        }
     }
 
     @Override
@@ -54,19 +63,17 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 port = Integer.parseInt(hostSplit[1]);
             }
 
-            Promise<Channel> promise = promise(host, port);
-
             // http连接
             if (!httpRequest.method().equals(HttpMethod.CONNECT)) {
-                httpHandle(httpRequest, promise);
+                httpHandle(httpRequest, promise(host, port));
                 return;
             }
 
             // https连接
             if (Objects.isNull(consumer)) {
-                httpsHandle(promise);
+                httpsHandle(promise(host, port));
             } else {
-                httpsHandle(sslContext(host, port), promise);
+                httpsHandle(sslContext(host, port), promiseSsl(host, port));
             }
         }
         ReferenceCountUtil.release(msg);
@@ -82,7 +89,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 channelPipeline.remove(HandlerName.HTTP_HANDLER);
                 channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
 
-                channelPipeline.addLast(new ExchangeHandler(future.getNow()));
+                channelPipeline.addLast(new ClientHandler(future.getNow()));
             });
         });
     }
@@ -102,9 +109,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 channelPipeline.remove(HandlerName.HTTP_HANDLER);
 
                 channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
-                // 调用addLast, 前面还有HttpServerCodec
-                channelPipeline.addLast(new ExchangeHandler(future.getNow(), consumer));
-
+                channelPipeline.addLast(new ClientHandler(future.getNow(), consumer));
             });
         });
     }
@@ -133,12 +138,13 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
         promise.addListener((FutureListener<Channel>) future -> {
             ChannelPipeline channelPipeline = ctx.pipeline();
-
             channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
             channelPipeline.remove(HandlerName.HTTP_HANDLER);
 
-            channelPipeline.addLast(new ExchangeHandler(future.getNow()));
-            future.get().writeAndFlush(object);
+            Channel channel = future.getNow();
+
+            channelPipeline.addLast(new ClientHandler(channel));
+            future.getNow().writeAndFlush(object);
         });
     }
 
@@ -155,7 +161,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         bootstrap.group(ctx.channel().eventLoop())
                 .channel(NioSocketChannel.class)
                 .remoteAddress(host, port)
-                .handler(new ExchangeHandler(ctx.channel()))
+                .handler(new TargetHandler(ctx.channel()))
                 .connect()
                 .addListener((ChannelFutureListener) future -> {
                     if (future.isSuccess()) {
@@ -168,5 +174,50 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 });
 
         return promise;
+    }
+
+    /**
+     * 创建一个连接
+     *
+     * @param host
+     * @param port
+     * @return
+     */
+    private Promise<Channel> promiseSsl(String host, int port) {
+        Promise<Channel> promise = ctx.executor().newPromise();
+
+        bootstrap.group(ctx.channel().eventLoop())
+                .channel(NioSocketChannel.class)
+                .remoteAddress(host, port)
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) throws Exception {
+                        ChannelPipeline channelPipeline = ch.pipeline();
+
+                        channelPipeline.addLast(new SslHandler(clientSslContext.newEngine(ch.alloc())));
+                        channelPipeline.addLast(new TargetHandler(ctx.channel(), host));
+                    }
+                })
+                .connect()
+                .addListener((ChannelFutureListener) future -> {
+                    if (future.isSuccess()) {
+                        promise.setSuccess(future.channel());
+                    } else {
+                        log.warn("{}:{} 代理请求失败", host, port);
+                        ctx.close();
+                        future.cancel(true);
+                    }
+                });
+
+        return promise;
+    }
+
+    private void initClientSslContext() {
+        try {
+            clientSslContext = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
+        } catch (SSLException e) {
+            log.error(e);
+            System.exit(-1);
+        }
     }
 }
