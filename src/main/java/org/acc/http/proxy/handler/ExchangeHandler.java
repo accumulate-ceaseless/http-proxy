@@ -6,30 +6,28 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.extern.log4j.Log4j2;
 
 /**
- * 代理服务器与目标服务器之间的通道处理器：将目标服务返回的数据转发到客户端
+ * 负责交换通道数据，不捕获内容
  */
 @Log4j2
-public class TargetHandler extends ChannelInboundHandlerAdapter {
-    // 客户端与代理服务器建立的通道
-    private final Channel clientChannel;
+public class ExchangeHandler extends ChannelInboundHandlerAdapter {
+    private final Channel outputChannel;
 
-    public TargetHandler(Channel clientChannel) {
-        this.clientChannel = clientChannel;
+    public ExchangeHandler(Channel targetChannel) {
+        this.outputChannel = targetChannel;
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        ctx.close();
         log.error(cause);
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        clientChannel.write(msg);
+        outputChannel.write(msg);
     }
 
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-        clientChannel.flush();
+        outputChannel.flush();
     }
 }

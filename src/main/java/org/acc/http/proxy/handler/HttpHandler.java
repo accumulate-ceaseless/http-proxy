@@ -9,7 +9,6 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
-import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
 import lombok.extern.log4j.Log4j2;
@@ -26,11 +25,11 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     private ChannelHandlerContext ctx;
     private final Bootstrap bootstrap = new Bootstrap();
     private final CertificatePool certificatePool;
-    private final Consumer<HttpRequest> consumer;
+    private final Consumer<FullHttpRequest> consumer;
 
     private SslContext clientSslContext;
 
-    public HttpHandler(CertificatePool certificatePool, Consumer<HttpRequest> consumer) {
+    public HttpHandler(CertificatePool certificatePool, Consumer<FullHttpRequest> consumer) {
         this.certificatePool = certificatePool;
         this.consumer = consumer;
 
@@ -52,29 +51,40 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
-        if (msg instanceof HttpRequest) {
-            HttpRequest httpRequest = (HttpRequest) msg;
+        if (msg instanceof FullHttpRequest) {
+            FullHttpRequest fullHttpRequest = (FullHttpRequest) msg;
 
             int port = 80;
 
-            String[] hostSplit = httpRequest.headers().get(HttpHeaderNames.HOST).split(":");
+            String[] hostSplit = fullHttpRequest.headers().get(HttpHeaderNames.HOST).split(":");
             String host = hostSplit[0];
             if (hostSplit.length > 1) {
                 port = Integer.parseInt(hostSplit[1]);
             }
 
             // http连接
-            if (!httpRequest.method().equals(HttpMethod.CONNECT)) {
-                httpHandle(httpRequest, promise(host, port));
+            if (!fullHttpRequest.method().equals(HttpMethod.CONNECT)) {
+                if (Objects.nonNull(consumer)) {
+                    // 如果是http请求，无需解密，直接获取
+                    consumer.accept(fullHttpRequest);
+                }
+
+                httpHandle(fullHttpRequest, promise(host, port));
                 return;
             }
 
-            // https连接
             if (Objects.isNull(consumer)) {
                 httpsHandle(promise(host, port));
-            } else {
-                httpsHandle(sslContext(host, port), promiseSsl(host, port));
+                return;
             }
+
+            SslContext sslContext = sslContext(host, port);
+            if (Objects.isNull(sslContext)) {
+                ctx.close();
+                return;
+            }
+
+            httpsHandle(sslContext(host, port), promiseSsl(host, port));
         }
     }
 
@@ -87,18 +97,14 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
                 channelPipeline.remove(HandlerName.HTTP_HANDLER);
                 channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
+                channelPipeline.remove(HandlerName.HTTP_OBJECT_AGGREGATOR);
 
-                channelPipeline.addLast(new ClientHandler(future.getNow()));
+                channelPipeline.addLast(new ExchangeHandler(future.getNow()));
             });
         });
     }
 
     private void httpsHandle(SslContext sslContext, Promise<Channel> promise) {
-        if (Objects.isNull(sslContext)) {
-            ctx.close();
-            return;
-        }
-
         promise.addListener((FutureListener<Channel>) future -> {
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, new HttpResponseStatus(200, "OK"));
 
@@ -108,7 +114,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 channelPipeline.remove(HandlerName.HTTP_HANDLER);
 
                 channelPipeline.addFirst(sslContext.newHandler(ctx.alloc()));
-                channelPipeline.addLast(new ClientHandler(future.getNow(), consumer));
+                channelPipeline.addLast(new HttpObjectAggregator(1024 * 1024));
+                channelPipeline.addLast(new CaptureExchangeHandler(future.getNow(), consumer));
             });
         });
     }
@@ -128,21 +135,17 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     }
 
     private void httpHandle(HttpRequest httpRequest, Promise<Channel> promise) {
-        if (Objects.nonNull(consumer)) {
-            // 如果是http请求，无需解密，直接获取
-            consumer.accept(httpRequest);
-        }
-
         Object object = MsgUtils.fromHttpRequest(httpRequest);
 
         promise.addListener((FutureListener<Channel>) future -> {
             ChannelPipeline channelPipeline = ctx.pipeline();
             channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
+            channelPipeline.remove(HandlerName.HTTP_OBJECT_AGGREGATOR);
             channelPipeline.remove(HandlerName.HTTP_HANDLER);
 
             Channel channel = future.getNow();
 
-            channelPipeline.addLast(new ClientHandler(channel));
+            channelPipeline.addLast(new ExchangeHandler(channel));
             future.getNow().writeAndFlush(object);
         });
     }
@@ -159,7 +162,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
         bootstrap.group(ctx.channel().eventLoop())
                 .channel(NioSocketChannel.class)
-                .handler(new TargetHandler(ctx.channel()))
+                .handler(new ExchangeHandler(ctx.channel()))
                 .connect(host, port)
                 .addListener((ChannelFutureListener) future -> {
                     if (future.isSuccess()) {
@@ -192,7 +195,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                         ChannelPipeline channelPipeline = ch.pipeline();
 
                         channelPipeline.addLast(new SslHandler(clientSslContext.newEngine(ch.alloc())));
-                        channelPipeline.addLast(new TargetHandler(ctx.channel()));
+                        channelPipeline.addLast(new HttpObjectAggregator(1024 * 1024));
+                        channelPipeline.addLast(new CaptureExchangeHandler(ctx.channel(), consumer));
                     }
                 })
                 .connect(host, port)

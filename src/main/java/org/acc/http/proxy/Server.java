@@ -8,7 +8,8 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import lombok.extern.log4j.Log4j2;
 import org.acc.http.proxy.certificate.CertificateImpl;
@@ -37,11 +38,11 @@ public final class Server {
         run(port, null, null);
     }
 
-    public void runWithConsumer(int port, Consumer<HttpRequest> consumer) {
+    public void runWithConsumer(int port, Consumer<FullHttpRequest> consumer) {
         run(port, consumer, new CertificatePool(new CertificateImpl()));
     }
 
-    private void run(int port, Consumer<HttpRequest> consumer, CertificatePool certificatePool) {
+    private void run(int port, Consumer<FullHttpRequest> consumer, CertificatePool certificatePool) {
         EventLoopGroup bossGroup = new NioEventLoopGroup();
         EventLoopGroup workerGroup = new NioEventLoopGroup();
 
@@ -55,6 +56,7 @@ public final class Server {
                             ChannelPipeline channelPipeline = socketChannel.pipeline();
 
                             channelPipeline.addLast(HandlerName.HTTP_SERVER_CODEC, new HttpServerCodec());
+                            channelPipeline.addLast(HandlerName.HTTP_OBJECT_AGGREGATOR, new HttpObjectAggregator(1024 * 1024));
                             channelPipeline.addLast(HandlerName.HTTP_HANDLER, new HttpHandler(certificatePool, consumer));
                         }
                     });
