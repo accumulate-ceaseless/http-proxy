@@ -76,7 +76,6 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 httpsHandle(sslContext(host, port), promiseSsl(host, port));
             }
         }
-        ReferenceCountUtil.release(msg);
     }
 
     private void httpsHandle(Promise<Channel> promise) {
