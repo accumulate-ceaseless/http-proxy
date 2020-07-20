@@ -1,5 +1,6 @@
 package org.acc.http.proxy.handler;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http.*;
@@ -60,7 +61,18 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                     // 如果是http请求，无需解密，直接获取
                     consumer.accept(fullHttpRequest);
                 }
-                httpHandle(fullHttpRequest, PromiseUtils.promise(host, port, clientChannelHandlerContext, new ExchangeHandler(clientChannelHandlerContext.channel())));
+
+
+                httpHandle(fullHttpRequest, PromiseUtils.promise(host, port, clientChannelHandlerContext, new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) throws Exception {
+                        ChannelPipeline channelPipeline = ch.pipeline();
+
+                        channelPipeline.addLast(new ExchangeHandler(clientChannelHandlerContext.channel()));
+                        // 编码 FullHttpRequest对象
+//                        channelPipeline.addLast(new HttpRequestEncoder());
+                    }
+                }));
                 return;
             }
 
@@ -92,6 +104,10 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
      * @param promise
      */
     private void httpHandle(FullHttpRequest fullHttpRequest, Promise<Channel> promise) {
+        // copy一份ByteBuf, 防止 IllegalReferenceCountException
+        ByteBuf byteBuf = ((ByteBuf) MsgUtils.fromHttpRequest(fullHttpRequest)).copy();
+        ByteBuf byteBufRetain = byteBuf.retain();
+
         promise.addListener((FutureListener<Channel>) future -> {
             ChannelPipeline channelPipeline = clientChannelHandlerContext.pipeline();
 
@@ -102,7 +118,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
             Channel channel = future.getNow();
 
             channelPipeline.addLast(new ExchangeHandler(channel));
-            channel.writeAndFlush(MsgUtils.fromHttpRequest(fullHttpRequest));
+            channel.writeAndFlush(byteBufRetain);
         });
     }
 
@@ -143,7 +159,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
                 channelPipeline.addFirst(sslContext.newHandler(clientChannelHandlerContext.alloc()));
                 //前面还有 new HttpServerCodec()、new HttpObjectAggregator(1024 * 1024)
-                channelPipeline.addLast(new CaptureExchangeHandler(consumer, clientChannelHandlerContext, clientSslContext, future));
+                channelPipeline.addLast(new CaptureExchangeHandler(consumer, future));
             });
         });
     }
