@@ -11,12 +11,16 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import lombok.extern.log4j.Log4j2;
 import org.acc.http.proxy.certificate.CertificateImpl;
 import org.acc.http.proxy.certificate.CertificatePool;
 import org.acc.http.proxy.handler.HandlerName;
 import org.acc.http.proxy.handler.HttpHandler;
 
+import javax.net.ssl.SSLException;
 import java.util.function.Consumer;
 
 /**
@@ -35,14 +39,18 @@ public final class Server {
     }
 
     public void run(int port) {
-        run(port, null, null);
+        run(port, null, null, null);
     }
 
     public void runWithConsumer(int port, Consumer<FullHttpRequest> consumer) {
-        run(port, consumer, new CertificatePool(new CertificateImpl()));
+        try {
+            run(port, consumer, new CertificatePool(new CertificateImpl()), SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build());
+        } catch (SSLException e) {
+            log.error(e);
+        }
     }
 
-    private void run(int port, Consumer<FullHttpRequest> consumer, CertificatePool certificatePool) {
+    private void run(int port, Consumer<FullHttpRequest> consumer, CertificatePool certificatePool, SslContext sslContext) {
         EventLoopGroup bossGroup = new NioEventLoopGroup();
         EventLoopGroup workerGroup = new NioEventLoopGroup();
 
@@ -56,8 +64,8 @@ public final class Server {
                             ChannelPipeline channelPipeline = socketChannel.pipeline();
 
                             channelPipeline.addLast(HandlerName.HTTP_SERVER_CODEC, new HttpServerCodec());
-                            channelPipeline.addLast(HandlerName.HTTP_OBJECT_AGGREGATOR, new HttpObjectAggregator(1024 * 1024));
-                            channelPipeline.addLast(HandlerName.HTTP_HANDLER, new HttpHandler(certificatePool, consumer));
+                            channelPipeline.addLast(HandlerName.HTTP_OBJECT_AGGREGATOR, new HttpObjectAggregator(1024 * 1024 * 1024));
+                            channelPipeline.addLast(HandlerName.HTTP_HANDLER, new HttpHandler(certificatePool, consumer, sslContext));
                         }
                     });
             ChannelFuture channelFuture = serverBootstrap.bind(port).sync();

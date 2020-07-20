@@ -1,36 +1,21 @@
 package org.acc.http.proxy.utils;
 
 import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpRequestEncoder;
-import io.netty.handler.codec.http.HttpResponse;
-import io.netty.handler.codec.http.HttpResponseEncoder;
+import lombok.extern.log4j.Log4j2;
 
+@Log4j2
 public final class MsgUtils {
     /**
      * 将请求转化为原始数据
      *
-     * @param httpRequest
+     * @param fullHttpRequest
      * @return
      */
-    public static Object fromHttpRequest(HttpRequest httpRequest) {
+    public static Object fromHttpRequest(FullHttpRequest fullHttpRequest) {
         EmbeddedChannel embeddedChannel = new EmbeddedChannel(new HttpRequestEncoder());
-        embeddedChannel.writeOutbound(httpRequest);
-        Object object = embeddedChannel.readOutbound();
-        embeddedChannel.close();
-
-        return object;
-    }
-
-    /**
-     * 将响应转化为原始数据
-     *
-     * @param httpResponse
-     * @return
-     */
-    public static Object fromHttpResponse(HttpResponse httpResponse) {
-        EmbeddedChannel embeddedChannel = new EmbeddedChannel(new HttpResponseEncoder());
-        embeddedChannel.writeOutbound(httpResponse);
+        embeddedChannel.writeOutbound(fullHttpRequest);
         Object object = embeddedChannel.readOutbound();
         embeddedChannel.close();
 
