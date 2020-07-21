@@ -43,6 +43,12 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     }
 
     @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+//        throw new HandlerException(cause);
+        cause.printStackTrace();
+    }
+
+    @Override
     protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
         if (msg instanceof FullHttpRequest) {
             FullHttpRequest fullHttpRequest = (FullHttpRequest) msg;
@@ -61,7 +67,6 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                     // 如果是http请求，无需解密，直接获取
                     consumer.accept(fullHttpRequest);
                 }
-
 
                 httpHandle(fullHttpRequest, PromiseUtils.promise(host, port, clientChannelHandlerContext, new ChannelInitializer<SocketChannel>() {
                     @Override
@@ -104,6 +109,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
      * @param promise
      */
     private void httpHandle(FullHttpRequest fullHttpRequest, Promise<Channel> promise) {
+        // MsgUtils.fromHttpRequest(fullHttpRequest) 会将 ReferenceCounted 减1，所以这里先加1
+        fullHttpRequest.retain();
         // copy一份ByteBuf, 防止 IllegalReferenceCountException
         ByteBuf byteBuf = ((ByteBuf) MsgUtils.fromHttpRequest(fullHttpRequest)).copy();
         ByteBuf byteBufRetain = byteBuf.retain();

@@ -2,9 +2,10 @@ package org.acc.http.proxy;
 
 import io.netty.handler.codec.http.HttpHeaderNames;
 import lombok.extern.log4j.Log4j2;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-//@Disabled
+@Disabled
 @Log4j2
 public class ServerTest {
     private Server server = new Server();
