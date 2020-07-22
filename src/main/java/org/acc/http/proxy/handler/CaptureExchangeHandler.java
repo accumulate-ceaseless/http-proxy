@@ -30,12 +30,12 @@ public class CaptureExchangeHandler extends ChannelInboundHandlerAdapter {
             fullHttpRequest.retain();
             consumer.accept(fullHttpRequest);
         }
-        ctx.flush();
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         cause.printStackTrace();
+        ctx.close();
     }
 
     @Override
@@ -43,5 +43,6 @@ public class CaptureExchangeHandler extends ChannelInboundHandlerAdapter {
         if (Objects.nonNull(fullHttpRequest)) {
             future.get().writeAndFlush(fullHttpRequest);
         }
+        ctx.flush();
     }
 }
