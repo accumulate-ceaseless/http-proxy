@@ -30,6 +30,7 @@ public class CaptureExchangeHandler extends ChannelInboundHandlerAdapter {
             fullHttpRequest.retain();
             consumer.accept(fullHttpRequest);
         }
+        ctx.flush();
     }
 
     @Override
