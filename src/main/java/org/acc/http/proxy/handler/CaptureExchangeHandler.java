@@ -7,19 +7,17 @@ import io.netty.handler.codec.http.FullHttpRequest;
 import lombok.extern.log4j.Log4j2;
 
 import java.util.Objects;
-import java.util.concurrent.Future;
 import java.util.function.Consumer;
 
 @Log4j2
 public class CaptureExchangeHandler extends ChannelInboundHandlerAdapter {
     private final Consumer<FullHttpRequest> consumer;
-    private final Future<Channel> future;
+    private final Channel outputChannel;
     private FullHttpRequest fullHttpRequest;
 
-
-    public CaptureExchangeHandler(Consumer<FullHttpRequest> consumer, Future<Channel> future) {
+    public CaptureExchangeHandler(Consumer<FullHttpRequest> consumer, Channel outputChannel) {
         this.consumer = consumer;
-        this.future = future;
+        this.outputChannel = outputChannel;
     }
 
     @Override
@@ -35,13 +33,12 @@ public class CaptureExchangeHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         cause.printStackTrace();
-        ctx.close();
     }
 
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-        if (Objects.nonNull(fullHttpRequest)) {
-            future.get().writeAndFlush(fullHttpRequest);
+        if (Objects.nonNull(fullHttpRequest) && outputChannel.isOpen()) {
+            outputChannel.writeAndFlush(fullHttpRequest);
         }
         ctx.flush();
     }

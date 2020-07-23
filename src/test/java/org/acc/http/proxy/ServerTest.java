@@ -19,7 +19,7 @@ public class ServerTest {
     public void runWithConsumerTest() {
         server.runWithConsumer(8001, httpRequest -> {
 //            log.info("请求 {}", httpRequest);
-            log.info("外面主机{}， 请求地址 {}", httpRequest.headers().get(HttpHeaderNames.HOST), httpRequest.uri());
+//            log.info("外面主机{}， 请求地址 {}", httpRequest.headers().get(HttpHeaderNames.HOST), httpRequest.uri());
         });
     }
 }
