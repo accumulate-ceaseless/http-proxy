@@ -24,12 +24,11 @@ public class ExchangeHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        outputChannel.write(msg);
+        outputChannel.writeAndFlush(msg);
     }
 
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-        outputChannel.flush();
         ctx.flush();
     }
 }
