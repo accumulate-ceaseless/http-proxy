@@ -28,16 +28,6 @@ import java.util.function.Consumer;
  */
 @Log4j2
 public final class Server {
-//    public static void main(String[] args) {
-//        if (args.length == 0) {
-//            log.error("请指定代理运行端口");
-//            return;
-//        }
-//
-//        Server server = new Server();
-//        server.run(Integer.parseInt(args[0]));
-//    }
-
     public void run(int port) {
         run(port, null, null, null);
     }
@@ -64,7 +54,7 @@ public final class Server {
                             ChannelPipeline channelPipeline = socketChannel.pipeline();
 
                             channelPipeline.addLast(HandlerName.HTTP_SERVER_CODEC, new HttpServerCodec());
-                            channelPipeline.addLast(HandlerName.HTTP_OBJECT_AGGREGATOR, new HttpObjectAggregator(1024 * 1024 * 1024));
+                            channelPipeline.addLast(HandlerName.HTTP_OBJECT_AGGREGATOR, new HttpObjectAggregator(1024 * 1024 * 512));
                             channelPipeline.addLast(HandlerName.HTTP_HANDLER, new HttpHandler(certificatePool, consumer, sslContext));
                         }
                     });

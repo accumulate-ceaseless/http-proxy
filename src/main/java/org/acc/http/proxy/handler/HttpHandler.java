@@ -1,7 +1,6 @@
 package org.acc.http.proxy.handler;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -23,7 +22,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     private final CertificatePool certificatePool;
     private final Consumer<FullHttpRequest> consumer;
     private final SslContext clientSslContext;
-    private Bootstrap bootstrap = new Bootstrap();
+    private final Bootstrap bootstrap = new Bootstrap();
 
     public HttpHandler(CertificatePool certificatePool, Consumer<FullHttpRequest> consumer, SslContext clientSslContext) {
         this.certificatePool = certificatePool;
@@ -44,8 +43,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        cause.printStackTrace();
-        ctx.close();
+        log.error(cause);
     }
 
     @Override
@@ -89,7 +87,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
      */
     private void httpHandle(FullHttpRequest fullHttpRequest, String host, int port) {
         fullHttpRequest.retain();
-        ByteBuf byteBuf = ((ByteBuf) MsgUtils.fromHttpRequest(fullHttpRequest));
+        Object object = MsgUtils.fromHttpRequest(fullHttpRequest);
 
         bootstrap.group(clientContext.channel().eventLoop())
                 .channel(NioSocketChannel.class)
@@ -106,7 +104,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                         Channel channel = future.channel();
 
                         channelPipeline.addLast(new ExchangeHandler(channel));
-                        channel.writeAndFlush(byteBuf);
+                        // 发送请求数据
+                        channel.writeAndFlush(object);
                     } else {
                         clientContext.close();
                     }
@@ -126,7 +125,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 .connect(host, port)
                 .addListener((ChannelFutureListener) future -> {
                     if (future.isSuccess()) {
-                        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, new HttpResponseStatus(200, "OK"));
+                        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
 
                         clientContext.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
                             ChannelPipeline channelPipeline = clientContext.pipeline();
@@ -158,6 +157,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline channelPipeline = ch.pipeline();
 
+                        // 处理与目标服务器的ssl
                         channelPipeline.addFirst(clientSslContext.newHandler(ch.alloc()));
 
                         channelPipeline.addLast(new HttpClientCodec());
@@ -168,13 +168,14 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                 .connect(host, port)
                 .addListener((ChannelFutureListener) future -> {
                     if (future.isSuccess()) {
-                        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, new HttpResponseStatus(200, "OK"));
+                        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
 
                         clientContext.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
                             ChannelPipeline channelPipeline = clientContext.pipeline();
 
                             channelPipeline.remove(HandlerName.HTTP_HANDLER);
 
+                            // 处理与客户端的ssl
                             channelPipeline.addFirst(sslContext.newHandler(clientContext.alloc()));
                             //前面还有 new HttpServerCodec()、new HttpObjectAggregator(1024 * 1024 * 512)
                             channelPipeline.addLast(new CaptureExchangeHandler(consumer, future.channel()));
