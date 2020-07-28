@@ -5,6 +5,8 @@ import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import lombok.extern.log4j.Log4j2;
@@ -13,6 +15,7 @@ import org.acc.http.proxy.pojo.CertificateInfo;
 import org.acc.http.proxy.utils.MsgUtils;
 
 import javax.net.ssl.SSLException;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -97,9 +100,9 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                     if (future.isSuccess()) {
                         ChannelPipeline channelPipeline = clientContext.pipeline();
 
-                        channelPipeline.remove(HandlerName.HTTP_HANDLER);
-                        channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
-                        channelPipeline.remove(HandlerName.HTTP_OBJECT_AGGREGATOR);
+                        removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
+                        removeHandler(channelPipeline, HandlerName.HTTP_SERVER_CODEC);
+                        removeHandler(channelPipeline, HandlerName.HTTP_OBJECT_AGGREGATOR);
 
                         Channel channel = future.channel();
 
@@ -130,9 +133,9 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                         clientContext.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
                             ChannelPipeline channelPipeline = clientContext.pipeline();
 
-                            channelPipeline.remove(HandlerName.HTTP_HANDLER);
-                            channelPipeline.remove(HandlerName.HTTP_SERVER_CODEC);
-                            channelPipeline.remove(HandlerName.HTTP_OBJECT_AGGREGATOR);
+                            removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
+                            removeHandler(channelPipeline, HandlerName.HTTP_SERVER_CODEC);
+                            removeHandler(channelPipeline, HandlerName.HTTP_OBJECT_AGGREGATOR);
 
                             channelPipeline.addLast(new ExchangeHandler(future.channel()));
                         });
@@ -157,6 +160,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline channelPipeline = ch.pipeline();
 
+                        channelPipeline.addFirst(new LoggingHandler(LogLevel.DEBUG));
                         // 处理与目标服务器的ssl
                         channelPipeline.addFirst(clientSslContext.newHandler(ch.alloc()));
 
@@ -173,7 +177,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                         clientContext.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
                             ChannelPipeline channelPipeline = clientContext.pipeline();
 
-                            channelPipeline.remove(HandlerName.HTTP_HANDLER);
+                            removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
 
                             // 处理与客户端的ssl
                             channelPipeline.addFirst(sslContext.newHandler(clientContext.alloc()));
@@ -198,5 +202,13 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         }
 
         return null;
+    }
+
+    private void removeHandler(ChannelPipeline channelPipeline, String handlerName) {
+        try {
+            channelPipeline.remove(handlerName);
+        } catch (NoSuchElementException e) {
+            log.error(e);
+        }
     }
 }

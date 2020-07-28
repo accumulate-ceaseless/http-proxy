@@ -14,6 +14,7 @@ import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.util.ResourceLeakDetector;
 import lombok.extern.log4j.Log4j2;
 import org.acc.http.proxy.certificate.CertificateImpl;
 import org.acc.http.proxy.certificate.CertificatePool;
@@ -28,6 +29,11 @@ import java.util.function.Consumer;
  */
 @Log4j2
 public final class Server {
+    static {
+        // 设置资源泄露探测级别为高级，显示更加详细的信息
+        ResourceLeakDetector.setLevel(ResourceLeakDetector.Level.ADVANCED);
+    }
+
     public void run(int port) {
         run(port, null, null, null);
     }
