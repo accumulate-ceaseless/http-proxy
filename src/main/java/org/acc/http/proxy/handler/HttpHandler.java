@@ -5,8 +5,6 @@ import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.*;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import lombok.extern.log4j.Log4j2;
@@ -160,7 +158,6 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline channelPipeline = ch.pipeline();
 
-                        channelPipeline.addFirst(new LoggingHandler(LogLevel.DEBUG));
                         // 处理与目标服务器的ssl
                         channelPipeline.addFirst(clientSslContext.newHandler(ch.alloc()));
 
