@@ -35,14 +35,8 @@ public class CaptureExchangeHandler extends ChannelInboundHandlerAdapter {
             outputChannel.writeAndFlush(fullHttpRequest);
 
             ReferenceCountUtil.release(fullHttpRequest);
-            ctx.flush();
         } else if (msg instanceof FullHttpResponse) {
-            if (outputChannel.isOpen()) {
-                outputChannel.writeAndFlush(msg);
-                ctx.flush();
-            } else {
-                ctx.close();
-            }
+            outputChannel.writeAndFlush(msg);
         }
     }
 

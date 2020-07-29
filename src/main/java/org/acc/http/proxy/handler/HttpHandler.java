@@ -91,27 +91,23 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         fullHttpRequest.retain();
         Object object = MsgUtils.fromHttpRequest(fullHttpRequest);
 
-        bootstrap.group(clientContext.channel().eventLoop())
-                .channel(NioSocketChannel.class)
-                .handler(new ExchangeHandler(clientContext.channel()))
-                .connect(host, port)
-                .addListener((ChannelFutureListener) future -> {
-                    if (future.isSuccess()) {
-                        ChannelPipeline channelPipeline = clientContext.pipeline();
+        connect(host, port, new ExchangeHandler(clientContext.channel())).addListener((ChannelFutureListener) future -> {
+            if (future.isSuccess()) {
+                ChannelPipeline channelPipeline = clientContext.pipeline();
 
-                        removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
-                        removeHandler(channelPipeline, HandlerName.HTTP_SERVER_CODEC);
-                        removeHandler(channelPipeline, HandlerName.HTTP_OBJECT_AGGREGATOR);
+                removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
+                removeHandler(channelPipeline, HandlerName.HTTP_SERVER_CODEC);
+                removeHandler(channelPipeline, HandlerName.HTTP_OBJECT_AGGREGATOR);
 
-                        Channel channel = future.channel();
+                Channel channel = future.channel();
 
-                        channelPipeline.addLast(new ExchangeHandler(channel));
-                        // 发送请求数据
-                        channel.writeAndFlush(object);
-                    } else {
-                        clientContext.close();
-                    }
-                });
+                channelPipeline.addLast(new ExchangeHandler(channel));
+                // 发送请求数据
+                channel.writeAndFlush(object);
+            } else {
+                clientContext.close();
+            }
+        });
     }
 
     /**
@@ -121,27 +117,23 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
      * @param port
      */
     private void httpsHandle(String host, int port) {
-        bootstrap.group(clientContext.channel().eventLoop())
-                .channel(NioSocketChannel.class)
-                .handler(new ExchangeHandler(clientContext.channel()))
-                .connect(host, port)
-                .addListener((ChannelFutureListener) future -> {
-                    if (future.isSuccess()) {
-                        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        connect(host, port, new ExchangeHandler(clientContext.channel())).addListener((ChannelFutureListener) future -> {
+            if (future.isSuccess()) {
+                FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
 
-                        clientContext.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
-                            ChannelPipeline channelPipeline = clientContext.pipeline();
+                clientContext.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
+                    ChannelPipeline channelPipeline = clientContext.pipeline();
 
-                            removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
-                            removeHandler(channelPipeline, HandlerName.HTTP_SERVER_CODEC);
-                            removeHandler(channelPipeline, HandlerName.HTTP_OBJECT_AGGREGATOR);
+                    removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
+                    removeHandler(channelPipeline, HandlerName.HTTP_SERVER_CODEC);
+                    removeHandler(channelPipeline, HandlerName.HTTP_OBJECT_AGGREGATOR);
 
-                            channelPipeline.addLast(new ExchangeHandler(future.channel()));
-                        });
-                    } else {
-                        clientContext.close();
-                    }
+                    channelPipeline.addLast(new ExchangeHandler(future.channel()));
                 });
+            } else {
+                clientContext.close();
+            }
+        });
     }
 
     /**
@@ -152,40 +144,36 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
      * @param port
      */
     private void httpsHandleCapture(SslContext sslContext, String host, int port) {
-        bootstrap.group(clientContext.channel().eventLoop())
-                .channel(NioSocketChannel.class)
-                .handler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel ch) throws Exception {
-                        ChannelPipeline channelPipeline = ch.pipeline();
+        connect(host, port, new ChannelInitializer<SocketChannel>() {
+            @Override
+            protected void initChannel(SocketChannel ch) throws Exception {
+                ChannelPipeline channelPipeline = ch.pipeline();
 
-                        // 处理与目标服务器的ssl
-                        channelPipeline.addFirst(clientSslContext.newHandler(ch.alloc()));
+                // 处理与目标服务器的ssl
+                channelPipeline.addFirst(clientSslContext.newHandler(ch.alloc()));
 
-                        channelPipeline.addLast(new HttpClientCodec());
-                        channelPipeline.addLast(new HttpObjectAggregator(1024 * 1024 * 512));
-                        channelPipeline.addLast(new CaptureExchangeHandler(clientContext.channel()));
-                    }
-                })
-                .connect(host, port)
-                .addListener((ChannelFutureListener) future -> {
-                    if (future.isSuccess()) {
-                        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+                channelPipeline.addLast(new HttpClientCodec());
+                channelPipeline.addLast(new HttpObjectAggregator(1024 * 1024 * 512));
+                channelPipeline.addLast(new CaptureExchangeHandler(clientContext.channel()));
+            }
+        }).addListener((ChannelFutureListener) future -> {
+            if (future.isSuccess()) {
+                FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
 
-                        clientContext.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
-                            ChannelPipeline channelPipeline = clientContext.pipeline();
+                clientContext.writeAndFlush(response).addListener((ChannelFutureListener) channelFuture -> {
+                    ChannelPipeline channelPipeline = clientContext.pipeline();
 
-                            removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
+                    removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
 
-                            // 处理与客户端的ssl
-                            channelPipeline.addFirst(sslContext.newHandler(clientContext.alloc()));
-                            //前面还有 new HttpServerCodec()、new HttpObjectAggregator(1024 * 1024 * 512)
-                            channelPipeline.addLast(new CaptureExchangeHandler(consumer, future.channel()));
-                        });
-                    } else {
-                        clientContext.close();
-                    }
+                    // 处理与客户端的ssl
+                    channelPipeline.addFirst(sslContext.newHandler(clientContext.alloc()));
+                    //前面还有 new HttpServerCodec()、new HttpObjectAggregator(1024 * 1024 * 512)
+                    channelPipeline.addLast(new CaptureExchangeHandler(consumer, future.channel()));
                 });
+            } else {
+                clientContext.close();
+            }
+        });
     }
 
     private SslContext sslContext(String host, int port) {
@@ -208,5 +196,10 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         } catch (NoSuchElementException e) {
             log.error(e);
         }
+    }
+
+    private ChannelFuture connect(String host, int port, ChannelHandler channelHandler) {
+        return bootstrap.group(clientContext.channel().eventLoop()).channel(NioSocketChannel.class)
+                .handler(channelHandler).connect(host, port);
     }
 }
