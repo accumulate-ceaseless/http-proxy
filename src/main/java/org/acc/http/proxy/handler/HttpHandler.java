@@ -45,6 +45,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         log.error(cause);
+        ctx.close();
     }
 
     @Override
@@ -163,7 +164,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
                         channelPipeline.addLast(new HttpClientCodec());
                         channelPipeline.addLast(new HttpObjectAggregator(1024 * 1024 * 512));
-                        channelPipeline.addLast(new ExchangeHandler(clientContext.channel()));
+                        channelPipeline.addLast(new CaptureExchangeHandler(clientContext.channel()));
                     }
                 })
                 .connect(host, port)

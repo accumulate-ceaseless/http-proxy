@@ -18,13 +18,14 @@ public class ExchangeHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        cause.printStackTrace();
+        log.error(this.getClass().getSimpleName(), cause);
         ctx.close();
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         outputChannel.writeAndFlush(msg);
+        ctx.flush();
     }
 
     @Override
