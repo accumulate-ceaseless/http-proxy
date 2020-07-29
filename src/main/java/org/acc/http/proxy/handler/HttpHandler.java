@@ -199,7 +199,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     }
 
     private ChannelFuture connect(String host, int port, ChannelHandler channelHandler) {
-        return bootstrap.group(clientContext.channel().eventLoop()).channel(NioSocketChannel.class)
-                .handler(channelHandler).connect(host, port);
+        return bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 15_000).option(ChannelOption.SO_KEEPALIVE, false)
+                .group(clientContext.channel().eventLoop()).channel(NioSocketChannel.class).handler(channelHandler).connect(host, port);
     }
 }
