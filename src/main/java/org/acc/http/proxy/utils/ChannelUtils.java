@@ -12,4 +12,10 @@ public final class ChannelUtils {
             channel.writeAndFlush(Unpooled.buffer()).addListener(ChannelFutureListener.CLOSE);
         }
     }
+
+    public static void writeAndFlush(Channel channel, Object msg) {
+        if (Objects.nonNull(channel) && channel.isActive() && Objects.nonNull(msg)) {
+            channel.writeAndFlush(msg);
+        }
+    }
 }

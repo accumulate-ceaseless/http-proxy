@@ -5,6 +5,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.extern.log4j.Log4j2;
 import org.acc.http.proxy.utils.ChannelUtils;
+import org.acc.http.proxy.utils.ThrowableUtils;
 
 /**
  * 负责交换通道数据，不捕获内容
@@ -19,13 +20,13 @@ public class ExchangeHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        log.error(this.getClass().getSimpleName(), cause);
+        ThrowableUtils.message(this.getClass(), cause);
         ctx.close();
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        outputChannel.writeAndFlush(msg);
+        ChannelUtils.writeAndFlush(outputChannel, msg);
     }
 
     @Override

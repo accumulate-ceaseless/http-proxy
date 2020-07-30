@@ -8,6 +8,7 @@ import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.log4j.Log4j2;
 import org.acc.http.proxy.utils.ChannelUtils;
+import org.acc.http.proxy.utils.ThrowableUtils;
 
 import java.util.function.Consumer;
 
@@ -33,17 +34,17 @@ public class CaptureExchangeHandler extends ChannelInboundHandlerAdapter {
             consumer.accept(fullHttpRequest);
 
             fullHttpRequest.retain();
-            outputChannel.writeAndFlush(fullHttpRequest);
+            ChannelUtils.writeAndFlush(outputChannel, fullHttpRequest);
 
             ReferenceCountUtil.release(fullHttpRequest);
         } else if (msg instanceof FullHttpResponse) {
-            outputChannel.writeAndFlush(msg);
+            ChannelUtils.writeAndFlush(outputChannel, msg);
         }
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        log.error(this.getClass().getSimpleName(), cause);
+        ThrowableUtils.message(this.getClass(), cause);
         ctx.close();
     }
 
