@@ -1,6 +1,7 @@
 package org.acc.http.proxy.handler;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -11,6 +12,8 @@ import lombok.extern.log4j.Log4j2;
 import org.acc.http.proxy.certificate.CertificatePool;
 import org.acc.http.proxy.pojo.CertificateInfo;
 import org.acc.http.proxy.utils.MsgUtils;
+import org.acc.http.proxy.utils.ReleaseUtils;
+import org.acc.http.proxy.utils.ThrowableUtils;
 
 import javax.net.ssl.SSLException;
 import java.util.NoSuchElementException;
@@ -44,7 +47,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        log.error(cause);
+        ThrowableUtils.message(this.getClass(), cause);
         ctx.close();
     }
 
@@ -92,20 +95,27 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         Object object = MsgUtils.fromHttpRequest(fullHttpRequest);
 
         connect(host, port, new ExchangeHandler(clientContext.channel())).addListener((ChannelFutureListener) future -> {
-            if (future.isSuccess()) {
-                ChannelPipeline channelPipeline = clientContext.pipeline();
+            try {
+                if (future.isSuccess()) {
+                    ChannelPipeline channelPipeline = clientContext.pipeline();
 
-                removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
-                removeHandler(channelPipeline, HandlerName.HTTP_SERVER_CODEC);
-                removeHandler(channelPipeline, HandlerName.HTTP_OBJECT_AGGREGATOR);
+                    removeHandler(channelPipeline, HandlerName.HTTP_HANDLER);
+                    removeHandler(channelPipeline, HandlerName.HTTP_SERVER_CODEC);
+                    removeHandler(channelPipeline, HandlerName.HTTP_OBJECT_AGGREGATOR);
 
-                Channel channel = future.channel();
+                    Channel channel = future.channel();
 
-                channelPipeline.addLast(new ExchangeHandler(channel));
-                // 发送请求数据
-                channel.writeAndFlush(object);
-            } else {
-                clientContext.close();
+                    channelPipeline.addLast(new ExchangeHandler(channel));
+                    // 发送请求数据
+                    channel.writeAndFlush(object);
+
+                    log.error(object.getClass());
+                    log.error(((ByteBuf) object).refCnt());
+                } else {
+                    clientContext.close();
+                }
+            } finally {
+                ReleaseUtils.release(object);
             }
         });
     }
