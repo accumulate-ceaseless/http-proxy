@@ -47,8 +47,8 @@ public final class Server {
     }
 
     private void run(int port, Consumer<FullHttpRequest> consumer, CertificatePool certificatePool, SslContext sslContext) {
-        EventLoopGroup bossGroup = new NioEventLoopGroup(4);
-        EventLoopGroup workerGroup = new NioEventLoopGroup(12);
+        EventLoopGroup bossGroup = new NioEventLoopGroup();
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
 
         try {
             ServerBootstrap serverBootstrap = new ServerBootstrap();
