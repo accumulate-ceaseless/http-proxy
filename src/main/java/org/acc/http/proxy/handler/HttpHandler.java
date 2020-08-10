@@ -28,7 +28,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     private final SslContext clientSslContext;
     private final Bootstrap bootstrap = new Bootstrap();
 
-    public HttpHandler(CertificatePool certificatePool, Consumer<FullHttpRequest> consumer, SslContext clientSslContext) {
+    public HttpHandler(CertificatePool certificatePool, Consumer<FullHttpRequest> consumer,
+                       SslContext clientSslContext) {
         this.certificatePool = certificatePool;
         this.consumer = consumer;
         this.clientSslContext = clientSslContext;
@@ -131,7 +132,6 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
      */
     private void httpsHandle(String host, int port) {
         connect(host, port, new ChannelInitializer<SocketChannel>() {
-
             @Override
             protected void initChannel(SocketChannel ch) throws Exception {
                 ch.pipeline().addLast(new ExchangeHandler(clientContext.channel()));
@@ -205,7 +205,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
             CertificateInfo certificateInfo = certificatePool.getCertificateInfo(host, port);
 
             if (Objects.nonNull(certificateInfo)) {
-                return SslContextBuilder.forServer(certificateInfo.getKeyPair().getPrivate(), certificateInfo.getX509Certificate()).build();
+                return SslContextBuilder.forServer(certificateInfo.getKeyPair().getPrivate(),
+                        certificateInfo.getX509Certificate()).build();
             }
         } catch (SSLException e) {
             log.error(e);
@@ -223,7 +224,9 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
     }
 
     private ChannelFuture connect(String host, int port, ChannelHandler channelHandler) {
-        return bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 15_000).option(ChannelOption.SO_KEEPALIVE, false)
-                .group(clientContext.channel().eventLoop()).channel(NioSocketChannel.class).handler(channelHandler).connect(host, port);
+        return bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 15_000)
+                .option(ChannelOption.SO_KEEPALIVE, false)
+                .group(clientContext.channel().eventLoop()).channel(NioSocketChannel.class)
+                .handler(channelHandler).connect(host, port);
     }
 }
