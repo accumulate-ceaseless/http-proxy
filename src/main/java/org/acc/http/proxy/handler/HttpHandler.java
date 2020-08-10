@@ -1,7 +1,6 @@
 package org.acc.http.proxy.handler;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -11,6 +10,7 @@ import io.netty.handler.ssl.SslContextBuilder;
 import lombok.extern.log4j.Log4j2;
 import org.acc.http.proxy.certificate.CertificatePool;
 import org.acc.http.proxy.pojo.CertificateInfo;
+import org.acc.http.proxy.utils.ChannelUtils;
 import org.acc.http.proxy.utils.MsgUtils;
 import org.acc.http.proxy.utils.ReleaseUtils;
 import org.acc.http.proxy.utils.ThrowableUtils;
@@ -94,7 +94,13 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
         fullHttpRequest.retain();
         Object object = MsgUtils.fromHttpRequest(fullHttpRequest);
 
-        connect(host, port, new ExchangeHandler(clientContext.channel())).addListener((ChannelFutureListener) future -> {
+        connect(host, port, new ChannelInitializer<SocketChannel>() {
+            @Override
+            protected void initChannel(SocketChannel ch) throws Exception {
+                ch.pipeline().addLast(new ExchangeHandler(clientContext.channel()));
+                clientContext.channel().closeFuture().addListener(future -> ChannelUtils.close(ch));
+            }
+        }).addListener((ChannelFutureListener) future -> {
             try {
                 if (future.isSuccess()) {
                     ChannelPipeline channelPipeline = clientContext.pipeline();
@@ -108,9 +114,6 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                     channelPipeline.addLast(new ExchangeHandler(channel));
                     // 发送请求数据
                     channel.writeAndFlush(object);
-
-                    log.error(object.getClass());
-                    log.error(((ByteBuf) object).refCnt());
                 } else {
                     clientContext.close();
                 }
@@ -127,7 +130,14 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
      * @param port
      */
     private void httpsHandle(String host, int port) {
-        connect(host, port, new ExchangeHandler(clientContext.channel())).addListener((ChannelFutureListener) future -> {
+        connect(host, port, new ChannelInitializer<SocketChannel>() {
+
+            @Override
+            protected void initChannel(SocketChannel ch) throws Exception {
+                ch.pipeline().addLast(new ExchangeHandler(clientContext.channel()));
+                clientContext.channel().closeFuture().addListener(future -> ChannelUtils.close(ch));
+            }
+        }).addListener((ChannelFutureListener) future -> {
             if (future.isSuccess()) {
                 FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
 
@@ -164,7 +174,11 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
 
                 channelPipeline.addLast(new HttpClientCodec());
                 channelPipeline.addLast(new HttpObjectAggregator(1024 * 1024 * 512));
-                channelPipeline.addLast(new CaptureExchangeHandler(clientContext.channel()));
+
+                Channel channel = clientContext.channel();
+                channel.closeFuture().addListener(future -> ChannelUtils.close(ch));
+
+                channelPipeline.addLast(new CaptureExchangeHandler(channel, "远程服务器"));
             }
         }).addListener((ChannelFutureListener) future -> {
             if (future.isSuccess()) {
@@ -178,7 +192,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<HttpObject> {
                     // 处理与客户端的ssl
                     channelPipeline.addFirst(sslContext.newHandler(clientContext.alloc()));
                     //前面还有 new HttpServerCodec()、new HttpObjectAggregator(1024 * 1024 * 512)
-                    channelPipeline.addLast(new CaptureExchangeHandler(consumer, future.channel()));
+                    channelPipeline.addLast(new CaptureExchangeHandler(consumer, future.channel(), "客户端"));
                 });
             } else {
                 clientContext.close();

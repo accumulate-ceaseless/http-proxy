@@ -17,13 +17,17 @@ public class CaptureExchangeHandler extends ChannelInboundHandlerAdapter {
     private Consumer<FullHttpRequest> consumer;
     private final Channel outputChannel;
 
-    public CaptureExchangeHandler(Consumer<FullHttpRequest> consumer, Channel outputChannel) {
+    private final String desc;
+
+    public CaptureExchangeHandler(Consumer<FullHttpRequest> consumer, Channel outputChannel, String desc) {
         this.consumer = consumer;
         this.outputChannel = outputChannel;
+        this.desc = desc;
     }
 
-    public CaptureExchangeHandler(Channel outputChannel) {
+    public CaptureExchangeHandler(Channel outputChannel, String desc) {
         this.outputChannel = outputChannel;
+        this.desc = desc;
     }
 
     @Override
@@ -33,24 +37,18 @@ public class CaptureExchangeHandler extends ChannelInboundHandlerAdapter {
 
             consumer.accept(fullHttpRequest);
 
-            fullHttpRequest.retain();
             ChannelUtils.writeAndFlush(outputChannel, fullHttpRequest);
-
             ReleaseUtils.release(fullHttpRequest);
         } else if (msg instanceof FullHttpResponse) {
             ChannelUtils.writeAndFlush(outputChannel, msg);
         }
+        ctx.flush();
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        ThrowableUtils.message(this.getClass(), cause);
+        ThrowableUtils.message(desc, this.getClass(), cause);
         ctx.close();
-    }
-
-    @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        ChannelUtils.close(outputChannel);
     }
 
     @Override
